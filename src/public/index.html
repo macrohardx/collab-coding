@@ -1,0 +1,47 @@
+<html>
+
+<head>
+    <title>MacroHard - MacroCode</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+    <link rel="stylesheet" type="text/css" data-name="vs/editor/editor.main" href="vs/editor/editor.main.css" />
+    <link rel="stylesheet" type="text/css" href="script/monaco-collab-ext/css/monaco-collab-ext.css">
+    <style>
+        body { background: #444;}
+        * {
+            padding: 0;
+            margin: 0;
+        }
+        #logged-users {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 15px;
+            background: purple;
+        }
+        .username {
+            background: black;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="container" style="width: 100%; height: calc(100% - 15px);"></div>
+    <div id="logged-users">
+
+    </div>
+
+    <script src="socket-connection/socket.io.js"></script>
+    <script src="vs/loader.js"></script>
+    <script src="vs/editor/editor.main.nls.js"></script>
+    <script src="vs/editor/editor.main.js"></script>
+    <script src="script/monaco-collab-ext/umd/monaco-collab-ext.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.15/lodash.min.js"></script>
+
+    <script src="main.js"></script>
+</body>
+
+</html>
