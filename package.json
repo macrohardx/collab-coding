@@ -13,6 +13,7 @@
     "@convergencelabs/monaco-collab-ext": "^0.3.0",
     "cookie": "^0.4.1",
     "express": "^5.0.0-alpha.8",
+    "handlebars": "^4.7.6",
     "jsonwebtoken": "^8.5.1",
     "lodash": "^4.17.15",
     "monaco-editor": "^0.20.0",

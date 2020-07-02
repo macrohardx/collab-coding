@@ -1,62 +1,95 @@
 require.config({ paths: { 'vs': 'vs' } });
 
-const urlParams = new URLSearchParams(window.location.search);
-
 require(['vs/editor/editor.main', 'MonacoCollabExt'], function (monaco, MonacoCollabExt) {
 
+    const urlParams = new URLSearchParams(window.location.search);
+
+    const socket = io('{{gateway_ip}}', {
+        path: '/macro-code/socket-connection',
+        transports: ['websocket']
+    })
+
+    let myUserName = null
+    let initializing = true
+    socket.emit('add user', { room: urlParams.has('id') ? urlParams.get('id') : null }, (data) => {
+        if (!urlParams.has('id')) {
+            let newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?id=' + data.room;
+            window.history.pushState({ path: newurl }, '', newurl);
+        }
+        editor.setValue(data.content)
+        setTimeout(() => {
+            myUserName = data.username
+            const otherUsers = _.filter(data.users, (u) => u.username !== myUserName) || []
+            otherUsers.forEach(updateOtherUsersCursor)
+            initializing = false
+        }, 1000)
+    })
+
     const editor = monaco.editor.create(document.getElementById('container'), {
-        value: [ '' ].join('\n'),
+        value: [''].join('\n'),
         language: 'javascript',
         theme: 'vs-dark'
     });
-    window.editor = editor
 
     const remoteSelectionManager = new MonacoCollabExt.RemoteSelectionManager({ editor: editor });
     const remoteCursorManager = new MonacoCollabExt.RemoteCursorManager({
         editor: editor,
         tooltips: true,
         tooltipDuration: 2
-    });
+    })
 
-    editor.onDidChangeCursorPosition(e => {
-        const offset = editor.getModel().getOffsetAt(e.position);
+    // When user cursor change position inform other users
+    editor.onDidChangeCursorPosition(e =>
         socket.emit('update-position', {
-            room: 'foo',
-            offset,
+            offset: editor.getModel().getOffsetAt(e.position),
             position: e.position,
             type: 'cursor'
         })
-    });
+    )
 
-    editor.onDidChangeCursorSelection(e => {
-        const startOffset = editor.getModel().getOffsetAt(e.selection.getStartPosition());
-        const endOffset = editor.getModel().getOffsetAt(e.selection.getEndPosition());
+    // When user selection change inform other users
+    editor.onDidChangeCursorSelection(e =>
         socket.emit('update-position', {
-            room: 'foo',
-            startOffset,
-            endOffset,
+            startOffset: getEditorStartOffset(editor, e.selection),
+            endOffset: getEditorEndOffset(editor, e.selection),
             startPosition: e.selection.getStartPosition(),
             endPosition: e.selection.getEndPosition(),
             type: 'selection'
         })
-    });
+    )
 
-    editor.onKeyDown((evt) => {
+    const getEditorStartOffset = (editor, selection) =>
+        editor.getModel().getOffsetAt(selection.getStartPosition())
+
+    const getEditorEndOffset = (editor, selection) =>
+        editor.getModel().getOffsetAt(selection.getEndPosition())
+
+    const blockEditingOnAnotherUserSelection = (evt) => {
+        // If CTRL is down user is not writing any code break out of the validation
         if (evt.ctrlKey) { return true }
+
+        // If there aren't any users logged in break out of the validation
         if (!Object.keys(userCursors).length) { return true }
-        if (/^\s*$/.test(editor.getValue())) { return true }
-        let myPosition = editor.getPosition()
-        let myOffset = editor.getModel().getOffsetAt(myPosition)
-        let isInsideUserSelection = _.some(userCursors, (c) => {
-            if (myPosition.lineNumber === c.position.lineNumber) { return true }
-            if (myOffset > c.startOffset && myOffset < c.endOffset) { return true }
-            return false
+
+        // If editor doesn't have any code on it let user break out of the validation
+        const isEditorBlank = /^\s*$/.test(editor.getValue())
+        if (isEditorBlank) { return true }
+
+        // Verifies if local user cursor intercepts another user's selection or cursor's current line
+        const myPosition = editor.getPosition()
+        const myOffset = editor.getModel().getOffsetAt(myPosition)
+        const isInsideUserSelection = _.some(userCursors, (c) => {
+            const isInSameLine = false//myPosition.lineNumber === c.position.lineNumber
+            const isInsideSelection = myOffset > c.startOffset && myOffset < c.endOffset
+            return isInSameLine || isInsideSelection
         })
         if (isInsideUserSelection) {
             evt.preventDefault()
             return false;
         }
-    })
+    };
+
+    editor.onKeyDown(blockEditingOnAnotherUserSelection)
 
     const contentManager = new MonacoCollabExt.EditorContentManager({
         editor: editor,
@@ -65,41 +98,23 @@ require(['vs/editor/editor.main', 'MonacoCollabExt'], function (monaco, MonacoCo
             socket.emit('update-content-insert', { index, text, content: editor.getValue() })
         },
         onReplace(index, length, text) {
+            if (initializing) { return }
             socket.emit('update-content-replace', { index, length, text, content: editor.getValue() })
         },
         onDelete(index, length) {
+            if (initializing) { return }
             socket.emit('update-content-delete', { index, length, content: editor.getValue() })
         }
     });
 
-    window.socket = io('http://localhost:5000/', {
-        path: '/macro-code/socket-connection',
-        transports: ['websocket']
-    })
-
-    let initializing = true
-    socket.emit('add user', { room: urlParams.has('id') ? urlParams.get('id') : null }, (data) => {
-        if (!urlParams.has('id')) {
-            let newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?id=' + data.room;
-            window.history.pushState({path:newurl},'',newurl);
-        }        
-        editor.setValue(data.content)
-        setTimeout(() => initializing = false, 1000)
-
-        let div = document.getElementById('logged-users')
-        div.innerHTML = _.join(_.map(data.users, (user) => 
-            `<span class="username" style="color: ${user.color}">${user.username}</span>`),
-            '')
-    })
-
-    socket.on('user-joined', (user) => {
-        console.log(`User ${user.username} joined the room`)
+    socket.on('user-joined', (data) => {
+        const otherUsers = _.filter(data.users, (u) => u.username !== myUserName) || []
+        otherUsers.forEach(updateOtherUsersCursor)
     })
 
     let userCursors = {}
-    window.userCursors = userCursors
 
-    socket.on('position-updated', (data) => {
+    const updateOtherUsersCursor = (data) => {
         if (!userCursors[data.username]) {
             userCursors[data.username] = {
                 cursor: remoteCursorManager.addCursor(data.username, data.color, data.username),
@@ -119,8 +134,10 @@ require(['vs/editor/editor.main', 'MonacoCollabExt'], function (monaco, MonacoCo
             userCursors[data.username].startPosition = data.startPosition
             userCursors[data.username].endPosition = data.endPosition
         }
-    })
-    window.cm = contentManager
+    }
+
+    socket.on('position-updated', updateOtherUsersCursor)
+
     socket.on('content-deleted', (data) => {
         contentManager.delete(data.index, data.length);
     })
@@ -136,12 +153,12 @@ require(['vs/editor/editor.main', 'MonacoCollabExt'], function (monaco, MonacoCo
     socket.on('user-logged-out', (data) => {
         if (_.get(userCursors, `[${data.username}].cursor`)) {
             userCursors[data.username].cursor.dispose()
-            userCursors[data.username].selection.dispose()        
+            userCursors[data.username].selection.dispose()
             delete userCursors[data.username]
         }
     })
 
-
+    // Resize the code editor when window is resized
     window.addEventListener('resize', _.throttle(() => {
         editor.layout()
     }, 1000));

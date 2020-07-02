@@ -13,15 +13,7 @@
             padding: 0;
             margin: 0;
         }
-        #logged-users {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 15px;
-            background: purple;
-        }
-        .username {
+        .status-bar {
             background: black;
         }
     </style>
@@ -30,8 +22,8 @@
 <body>
 
     <div id="container" style="width: 100%; height: calc(100% - 15px);"></div>
-    <div id="logged-users">
-
+    <div id="status-bar">
+        <div id="users-connected-count"></div>
     </div>
 
     <script src="socket-connection/socket.io.js"></script>

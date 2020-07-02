@@ -12,10 +12,23 @@ const config = require('./config')
 const uuid = require('uuid').v4
 const { get } = require('lodash/fp')
 const NodeCache = require('node-cache')
+const Handlebards = require('handlebars')
+const fs = require('fs')
+
+let template = null
+
+app.use('/macro-code/main.js', (req, res, next) => {
+    if (!template) {
+        template = Handlebards.compile(fs.readFileSync(path.join(__dirname, 'public', 'main.js'), { encoding: 'utf-8' }))
+    }    
+    res.send(template({ gateway_ip: req.headers['x-gateway'] }))    
+})
 
 app.use('/macro-code', express.static(path.join(__dirname, 'public')))
 
-// Adds endpoints to load front-end dependencies
+
+
+// Adds endpoints to load front-end dependencies from node_modules
 app.use('/macro-code/vs', express.static(path.join(__dirname, '../node_modules/monaco-editor/min/vs')))
 app.use('/macro-code/script/monaco-collab-ext', express.static(path.join(__dirname, '../node_modules/@convergencelabs/monaco-collab-ext')))
 
@@ -35,6 +48,10 @@ const getUser = (room, username) => {
 }
 
 io.on('connection', async (socket) => {
+
+    if (!socket.handshake.headers.cookie) {
+        return socket.disconnect(true);
+    }
 
     const cookies = cookie.parse(socket.handshake.headers.cookie)
     const userData = await decodeJwt(cookies['x-access-token'])
@@ -79,12 +96,21 @@ io.on('connection', async (socket) => {
         socket.join(room)        
 
         addedUser = true
-        socket.in(room).emit('user-joined', { username: userData.username })
-        return cb && cb({ room, content: appRooms[room].content, users: appRooms[room].users })
+        socket.in(room).emit('user-joined', { username: userData.username,  users: appRooms[room].users })
+        return cb && cb({ room, content: appRooms[room].content, users: appRooms[room].users, username: userData.username })
     })
 
     socket.on('update-position', (data) => {
         if (!data) { return }
+
+        const appRooms = appCache.get('rooms') || {}
+        const user = get(`['${room}'].users['${userData.username}']`, appRooms)
+        if (!user) { return }
+
+        // copy data properties to user
+        Object.assign(user, data)
+
+        appCache.set('rooms', appRooms)
 
         socket.in(room).emit('position-updated', {
             username: userData.username,
@@ -142,7 +168,8 @@ io.on('connection', async (socket) => {
         appCache.set('logged-users', loggedUsers)
         //clean up cursors
         socket.in(room).emit('user-logged-out', {
-            username: userData.username
+            username: userData.username,
+            users: loggedUsers
         })
     })
 })
